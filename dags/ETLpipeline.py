@@ -1,16 +1,17 @@
 from airflow import DAG
-from airflow.providers.http.operators import SimpleHttpOperator
+from airflow.providers.http.operators.http import HttpOperator
+
 from datetime import datetime
 from airflow.decorators import task 
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 import json
-from airflow.utils.dates import days_ago
+ 
 
 # define DAG
 with DAG(
     dag_id="ETL_pipeline",
-    start_date=days_ago(1),
-    scgedule="@daily",
+    start_date=datetime(2026, 5, 1),
+    schedule="@daily",
     catchup=False
 )as dag:
     
@@ -39,13 +40,13 @@ with DAG(
 
     # step 2: Extract data from NASA API
 
-    extract_apod=SimpleHttpOperator(
+    extract_apod=HttpOperator(
         task_id="extract_apod",
-        http_con_id="nasa_api",  ## connection id defined in Airflow UI for nasa api
-        endpoint="planetary/apod", ## nasa api endpoint for astronomy picture of the day
+        http_conn_id="nasa_api",  ## connection id defined in Airflow UI for nasa api
+        endpoint="/planetary/apod", ## nasa api endpoint for astronomy picture of the day
         method="GET",
-        data={"api_key":"{{ conn.nasa_api.extra_djson_api_key }}"}, ## use the api key from the connection configuration in Airflow UI
-        reponse_filter=lambda response: response.json()
+        data={"api_key":"{{ conn.nasa_api.extra_dejson.api_key }}"}, ## use the api key from the connection configuration in Airflow UI
+        response_filter=lambda response: response.json()
     )
 
 
@@ -84,4 +85,14 @@ with DAG(
             apod_data["media_type"]
         ))
     # step 5: verify data in DBviewer
+
     # step6 : set dependencies between tasks
+    # Extract
+    create_table() >> extract_apod 
+    api_response = extract_apod.output
+
+    # Transform
+    transformed_data= transform_data(api_response)
+
+    # Load
+    load_data_to_postgres(transformed_data)
